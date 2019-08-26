@@ -17,10 +17,13 @@ package client
 import (
 	"fmt"
 	"io"
+	"os"
+	"strings"
+	"encoding/json"
 	"runtime"
 	"sync"
 	"time"
-
+	"os/exec"
 	"github.com/fatedier/frp/models/config"
 	"github.com/fatedier/frp/models/msg"
 	"github.com/fatedier/frp/utils/crypto"
@@ -354,7 +357,6 @@ func (ctl *Control) manager() {
 			ctl.Error("panic error: %v", err)
 		}
 	}()
-
 	hbSend := time.NewTicker(time.Duration(config.ClientCommonCfg.HeartBeatInterval) * time.Second)
 	defer hbSend.Stop()
 	hbCheck := time.NewTicker(time.Second)
@@ -386,7 +388,13 @@ func (ctl *Control) manager() {
 				// Start a new proxy handler if no error got
 				if m.Error != "" {
 					ctl.Warn("[%s] start error: %s", m.ProxyName, m.Error)
-					continue
+					cmdErr := ctl.generateRedisMessage(m.ProxyName, 1, m.Error)
+					if cmdErr != nil{
+						ctl.Warn("redis-cli publish error: %v", cmdErr)
+						continue
+					}else{
+						os.Exit(1)
+					}
 				}
 				cfg, ok := ctl.getProxyConf(m.ProxyName)
 				if !ok {
@@ -409,6 +417,10 @@ func (ctl *Control) manager() {
 				}
 				ctl.addProxy(m.ProxyName, pxy)
 				ctl.Info("[%s] start proxy success", m.ProxyName)
+				cmdErr := ctl.generateRedisMessage(m.ProxyName, 0, "")
+				if cmdErr != nil{
+					ctl.Warn("redis-cli publish error: %v", cmdErr)
+				}
 			case *msg.Pong:
 				ctl.lastPong = time.Now()
 				ctl.Debug("receive heartbeat from server")
@@ -423,7 +435,6 @@ func (ctl *Control) controler() {
 	var err error
 	maxDelayTime := 30 * time.Second
 	delayTime := time.Second
-
 	checkInterval := 10 * time.Second
 	checkProxyTicker := time.NewTicker(checkInterval)
 	for {
@@ -618,4 +629,16 @@ func (ctl *Control) reloadConf(pxyCfgs map[string]config.ProxyConf, vistorCfgs m
 		}
 	}
 	ctl.Info("vistor added: %v", addedVistorName)
+}
+func (ctl *Control) generateRedisMessage(port string, code int, message string) (err error){
+	redisMessage := make(map[string]interface{})
+	arr := strings.Split(port, "SSH")
+	redisMessage["port"] = arr[1]
+	redisMessage["code"] = code
+	redisMessage["error"] = message
+	mjson, _ :=json.Marshal(redisMessage)
+	mString :=string(mjson)
+	cmd := exec.Command("redis-cli","publish","System:RemoteSupport",mString)
+	cmdErr := cmd.Start()
+	return cmdErr
 }
