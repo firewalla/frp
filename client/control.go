@@ -15,15 +15,16 @@
 package client
 
 import (
+	"encoding/json"
 	"fmt"
 	"io"
 	"os"
-	"strings"
-	"encoding/json"
+	"os/exec"
 	"runtime"
+	"strings"
 	"sync"
 	"time"
-	"os/exec"
+
 	"github.com/fatedier/frp/models/config"
 	"github.com/fatedier/frp/models/msg"
 	"github.com/fatedier/frp/utils/crypto"
@@ -389,10 +390,10 @@ func (ctl *Control) manager() {
 				if m.Error != "" {
 					ctl.Warn("[%s] start error: %s", m.ProxyName, m.Error)
 					cmdErr := ctl.generateRedisMessage(m.ProxyName, 1, m.Error)
-					if cmdErr != nil{
+					if cmdErr != nil {
 						ctl.Warn("redis-cli publish error: %v", cmdErr)
 						continue
-					}else{
+					} else {
 						os.Exit(1)
 					}
 				}
@@ -418,7 +419,7 @@ func (ctl *Control) manager() {
 				ctl.addProxy(m.ProxyName, pxy)
 				ctl.Info("[%s] start proxy success", m.ProxyName)
 				cmdErr := ctl.generateRedisMessage(m.ProxyName, 0, "")
-				if cmdErr != nil{
+				if cmdErr != nil {
 					ctl.Warn("redis-cli publish error: %v", cmdErr)
 				}
 			case *msg.Pong:
@@ -630,15 +631,15 @@ func (ctl *Control) reloadConf(pxyCfgs map[string]config.ProxyConf, vistorCfgs m
 	}
 	ctl.Info("vistor added: %v", addedVistorName)
 }
-func (ctl *Control) generateRedisMessage(port string, code int, message string) (err error){
+func (ctl *Control) generateRedisMessage(port string, code int, message string) (err error) {
 	redisMessage := make(map[string]interface{})
 	arr := strings.Split(port, "SSH")
 	redisMessage["port"] = arr[1]
 	redisMessage["code"] = code
 	redisMessage["error"] = message
-	mjson, _ :=json.Marshal(redisMessage)
-	mString :=string(mjson)
-	cmd := exec.Command("redis-cli","publish","System:RemoteSupport",mString)
-	cmdErr := cmd.Start()
+	mjson, _ := json.Marshal(redisMessage)
+	mString := string(mjson)
+	cmd := exec.Command("redis-cli", "publish", "System:RemoteSupport", mString)
+	_, cmdErr := cmd.Output()
 	return cmdErr
 }
